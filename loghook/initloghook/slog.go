@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/HaChains/infra/loghook"
 	"github.com/HaChains/infra/loghook/webhook"
@@ -16,9 +17,10 @@ type slogHandler struct {
 	// std log handler
 	*slog.TextHandler
 
-	buf   *bytes.Buffer
-	wh    webhook.Webhook
-	level slog.Level
+	buf     *bytes.Buffer
+	bufLock sync.Mutex
+	wh      webhook.Webhook
+	level   slog.Level
 }
 
 func newHookedSlogger(wh webhook.Webhook) *slogHandler {
@@ -49,6 +51,7 @@ func (s *slogHandler) setLevel(l string) error {
 }
 
 func (s *slogHandler) Handle(_ context.Context, r slog.Record) error {
+	s.bufLock.Lock()
 	s.buf.Reset()
 	s.buf.WriteString(r.Level.String())
 	s.buf.WriteString(" ")
@@ -63,13 +66,16 @@ func (s *slogHandler) Handle(_ context.Context, r slog.Record) error {
 		return true
 	})
 
+	msg := s.buf.String()
+	s.bufLock.Unlock()
+
 	// send to webhook
 	if r.Level >= s.level {
-		s.wh.Send(s.buf.String())
+		s.wh.Send(msg)
 	}
 
 	// write to std
-	fmt.Println(s.buf.String())
+	fmt.Println(msg)
 	return nil
 }
 
