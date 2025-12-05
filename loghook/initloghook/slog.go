@@ -8,12 +8,14 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/HaChains/infra/loghook"
 	"github.com/HaChains/infra/loghook/webhook"
 )
 
 type slogHandler struct {
+	tag string
 	// std log handler
 	*slog.TextHandler
 
@@ -23,15 +25,21 @@ type slogHandler struct {
 	level   slog.Level
 }
 
-func newHookedSlogger(wh webhook.Webhook) *slogHandler {
+func newHookedSlogger(tag string, wh webhook.Webhook) *slogHandler {
 	var buf bytes.Buffer
 
-	return &slogHandler{
+	h := &slogHandler{
 		TextHandler: slog.NewTextHandler(os.Stderr, nil),
 
 		buf: &buf,
 		wh:  wh,
 	}
+
+	if tag != "" {
+		h.tag = tag
+	}
+
+	return h
 }
 
 func (s *slogHandler) setLevel(l string) error {
@@ -71,11 +79,11 @@ func (s *slogHandler) Handle(_ context.Context, r slog.Record) error {
 
 	// send to webhook
 	if r.Level >= s.level {
-		s.wh.Send(msg)
+		s.wh.Send(fmt.Sprintf("%s %s", s.tag, msg))
 	}
 
 	// write to std
-	fmt.Println(msg)
+	fmt.Fprintln(os.Stderr, r.Time.Format(time.DateTime), msg)
 	return nil
 }
 
@@ -89,7 +97,7 @@ func Slog(c *loghook.Config) {
 		if wh == nil {
 			panic(fmt.Sprintf("webhook init failed, config: %+v", c))
 		}
-		s := newHookedSlogger(wh)
+		s := newHookedSlogger(c.Tag, wh)
 		if err := s.setLevel(c.Level); err != nil {
 			panic(err)
 		}
