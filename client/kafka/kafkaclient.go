@@ -13,9 +13,9 @@ import (
 )
 
 type Message struct {
-	ID uint64
-	K  string
-	V  proto.Message
+	Meta any
+	K    string
+	V    proto.Message
 }
 
 type Config struct {
