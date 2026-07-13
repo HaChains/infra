@@ -26,14 +26,28 @@ func (kc *KafkaClient) Producer(topic string, commit func(m *Message) error) *Pr
 	}
 }
 
-func (p *Producer) Produce(m *Message) {
-	p.chSend <- m
+func (p *Producer) Produce(m *Message) error {
+	select {
+	case <-p.ctx.Done():
+		return p.ctx.Err()
+	default:
+	}
+
+	// TODO: Signal when Run exits so Produce does not block forever on a full
+	// queue if Run returns an error before the parent context is canceled.
+	select {
+	case <-p.ctx.Done():
+		return p.ctx.Err()
+	case p.chSend <- m:
+		return nil
+	}
 }
 
 func (p *Producer) round() error {
-	var msg *Message
 	select {
-	case msg = <-p.chSend:
+	case <-p.ctx.Done():
+		return p.ctx.Err()
+	case msg := <-p.chSend:
 		v, err := proto.Marshal(msg.V)
 		if err != nil {
 			return err
@@ -54,19 +68,8 @@ func (p *Producer) round() error {
 			case <-time.After(time.Second):
 			}
 		}
-	default:
-	}
-	if msg != nil {
 		return p.commit(msg)
 	}
-	if len(p.chSend) == 0 {
-		select {
-		case <-p.ctx.Done():
-			return p.ctx.Err()
-		default:
-		}
-	}
-	return nil
 }
 
 func (p *Producer) Run() (err error) {
